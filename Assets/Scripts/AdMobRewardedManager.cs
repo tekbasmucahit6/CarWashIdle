@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using GoogleMobileAds;
 using GoogleMobileAds.Api;
 using GoogleMobileAds.Common;
@@ -8,14 +9,35 @@ public class AdMobRewardedManager : MonoBehaviour
 {
     public static AdMobRewardedManager Instance { get; private set; }
 
-    [Header("Editor Test")]
+    [Header("Testing")]
     [SerializeField] private bool simulateRewardInEditor = true;
+
+    [Tooltip(
+        "Keep this ON for TestFlight testing. " +
+        "Turn it OFF before the final App Store release build."
+    )]
+    [SerializeField] private bool useTestAds = true;
+
+    [Header("Retry Settings")]
+    [SerializeField] private float rewardedRetryDelaySeconds = 10f;
+    [SerializeField] private float interstitialRetryDelaySeconds = 15f;
 
     private RewardedAd rewardedAd;
     private InterstitialAd interstitialAd;
 
+    private Coroutine rewardedRetryRoutine;
+    private Coroutine interstitialRetryRoutine;
+
+    private bool rewardedLoading;
+    private bool interstitialLoading;
+
     private bool fullScreenAdShowing;
     private bool adsInitialized;
+    private bool initializationStarted;
+
+    // ---------------------------------------------------------
+    // GOOGLE OFFICIAL TEST AD UNIT IDS
+    // ---------------------------------------------------------
 
     private const string AndroidTestRewardedId =
         "ca-app-pub-3940256099942544/5224354917";
@@ -29,14 +51,25 @@ public class AdMobRewardedManager : MonoBehaviour
     private const string IosTestInterstitialId =
         "ca-app-pub-3940256099942544/4411468910";
 
+    // ---------------------------------------------------------
+    // WASHLINE IDLE PRODUCTION IOS IDS
+    // ---------------------------------------------------------
+
     private const string IosProductionRewardedId =
         "ca-app-pub-8239080327367611/3531958929";
 
     private const string IosProductionInterstitialId =
         "ca-app-pub-8239080327367611/1532481547";
 
+    // ---------------------------------------------------------
+    // PUBLIC STATE
+    // ---------------------------------------------------------
+
     public bool IsFullScreenAdShowing =>
         fullScreenAdShowing;
+
+    public bool AdsInitialized =>
+        adsInitialized;
 
     public bool IsRewardedReady
     {
@@ -44,7 +77,9 @@ public class AdMobRewardedManager : MonoBehaviour
         {
 #if UNITY_EDITOR
             if (simulateRewardInEditor)
+            {
                 return adsInitialized;
+            }
 #endif
 
             return adsInitialized &&
@@ -59,7 +94,9 @@ public class AdMobRewardedManager : MonoBehaviour
         {
 #if UNITY_EDITOR
             if (simulateRewardInEditor)
+            {
                 return adsInitialized;
+            }
 #endif
 
             return adsInitialized &&
@@ -68,9 +105,16 @@ public class AdMobRewardedManager : MonoBehaviour
         }
     }
 
+    // ---------------------------------------------------------
+    // UNITY
+    // ---------------------------------------------------------
+
     private void Awake()
     {
-        if (Instance != null && Instance != this)
+        if (
+            Instance != null &&
+            Instance != this
+        )
         {
             Destroy(gameObject);
             return;
@@ -79,15 +123,22 @@ public class AdMobRewardedManager : MonoBehaviour
         Instance = this;
     }
 
+    // ConsentManager bunu çağıracak.
     public void InitializeAds()
     {
         if (adsInitialized)
             return;
 
+        if (initializationStarted)
+            return;
+
+        initializationStarted = true;
+
 #if UNITY_EDITOR
         if (simulateRewardInEditor)
         {
             adsInitialized = true;
+            initializationStarted = false;
 
             Debug.Log(
                 "AdMob editor simulation ready."
@@ -103,6 +154,8 @@ public class AdMobRewardedManager : MonoBehaviour
                 MobileAdsEventExecutor.ExecuteInUpdate(
                     () =>
                     {
+                        initializationStarted = false;
+
                         if (initStatus == null)
                         {
                             Debug.LogError(
@@ -119,12 +172,15 @@ public class AdMobRewardedManager : MonoBehaviour
                         );
 
                         Debug.Log(
-                            Debug.isDebugBuild
+                            useTestAds
                                 ? "AdMob mode: TEST ADS"
                                 : "AdMob mode: PRODUCTION ADS"
                         );
 
+                        // Rewarded reklam hemen hazırlanır.
                         LoadRewardedAd();
+
+                        // Interstitial da arkada hazırlanır.
                         LoadInterstitialAd();
                     }
                 );
@@ -132,10 +188,15 @@ public class AdMobRewardedManager : MonoBehaviour
         );
     }
 
+    // ---------------------------------------------------------
+    // AD UNIT IDS
+    // ---------------------------------------------------------
+
     private string GetRewardedAdUnitId()
     {
 #if UNITY_IOS
-        if (Debug.isDebugBuild)
+
+        if (useTestAds)
         {
             return IosTestRewardedId;
         }
@@ -143,17 +204,21 @@ public class AdMobRewardedManager : MonoBehaviour
         return IosProductionRewardedId;
 
 #elif UNITY_ANDROID
+
         return AndroidTestRewardedId;
 
 #else
+
         return string.Empty;
+
 #endif
     }
 
     private string GetInterstitialAdUnitId()
     {
 #if UNITY_IOS
-        if (Debug.isDebugBuild)
+
+        if (useTestAds)
         {
             return IosTestInterstitialId;
         }
@@ -161,17 +226,35 @@ public class AdMobRewardedManager : MonoBehaviour
         return IosProductionInterstitialId;
 
 #elif UNITY_ANDROID
+
         return AndroidTestInterstitialId;
 
 #else
+
         return string.Empty;
+
 #endif
     }
+
+    // ---------------------------------------------------------
+    // REWARDED LOAD
+    // ---------------------------------------------------------
 
     public void LoadRewardedAd()
     {
         if (!adsInitialized)
             return;
+
+        if (rewardedLoading)
+            return;
+
+        if (
+            rewardedAd != null &&
+            rewardedAd.CanShowAd()
+        )
+        {
+            return;
+        }
 
         string adUnitId =
             GetRewardedAdUnitId();
@@ -179,7 +262,13 @@ public class AdMobRewardedManager : MonoBehaviour
         if (string.IsNullOrEmpty(adUnitId))
             return;
 
+        rewardedLoading = true;
+
         DestroyRewardedAd();
+
+        Debug.Log(
+            "Loading rewarded ad..."
+        );
 
         AdRequest request =
             new AdRequest();
@@ -189,31 +278,105 @@ public class AdMobRewardedManager : MonoBehaviour
             request,
             (RewardedAd ad, LoadAdError error) =>
             {
-                if (error != null || ad == null)
-                {
-                    Debug.LogWarning(
-                        "Rewarded ad load failed: " +
-                        error
-                    );
+                MobileAdsEventExecutor.ExecuteInUpdate(
+                    () =>
+                    {
+                        rewardedLoading = false;
 
-                    return;
-                }
+                        if (
+                            error != null ||
+                            ad == null
+                        )
+                        {
+                            Debug.LogWarning(
+                                "Rewarded ad load failed: " +
+                                error
+                            );
 
-                rewardedAd = ad;
+                            ScheduleRewardedRetry();
 
-                RegisterRewardedEvents(ad);
+                            return;
+                        }
 
-                Debug.Log(
-                    "Rewarded ad loaded."
+                        CancelRewardedRetry();
+
+                        rewardedAd = ad;
+
+                        RegisterRewardedEvents(
+                            ad
+                        );
+
+                        Debug.Log(
+                            "Rewarded ad READY."
+                        );
+                    }
                 );
             }
         );
     }
 
+    private void ScheduleRewardedRetry()
+    {
+        if (
+            rewardedRetryRoutine != null
+        )
+        {
+            return;
+        }
+
+        rewardedRetryRoutine =
+            StartCoroutine(
+                RewardedRetryRoutine()
+            );
+    }
+
+    private IEnumerator RewardedRetryRoutine()
+    {
+        Debug.Log(
+            $"Rewarded retry in " +
+            $"{rewardedRetryDelaySeconds:0}s."
+        );
+
+        yield return new WaitForSecondsRealtime(
+            rewardedRetryDelaySeconds
+        );
+
+        rewardedRetryRoutine = null;
+
+        LoadRewardedAd();
+    }
+
+    private void CancelRewardedRetry()
+    {
+        if (rewardedRetryRoutine == null)
+            return;
+
+        StopCoroutine(
+            rewardedRetryRoutine
+        );
+
+        rewardedRetryRoutine = null;
+    }
+
+    // ---------------------------------------------------------
+    // INTERSTITIAL LOAD
+    // ---------------------------------------------------------
+
     public void LoadInterstitialAd()
     {
         if (!adsInitialized)
             return;
+
+        if (interstitialLoading)
+            return;
+
+        if (
+            interstitialAd != null &&
+            interstitialAd.CanShowAd()
+        )
+        {
+            return;
+        }
 
         string adUnitId =
             GetInterstitialAdUnitId();
@@ -221,7 +384,13 @@ public class AdMobRewardedManager : MonoBehaviour
         if (string.IsNullOrEmpty(adUnitId))
             return;
 
+        interstitialLoading = true;
+
         DestroyInterstitialAd();
+
+        Debug.Log(
+            "Loading interstitial ad..."
+        );
 
         AdRequest request =
             new AdRequest();
@@ -231,26 +400,93 @@ public class AdMobRewardedManager : MonoBehaviour
             request,
             (InterstitialAd ad, LoadAdError error) =>
             {
-                if (error != null || ad == null)
-                {
-                    Debug.LogWarning(
-                        "Interstitial ad load failed: " +
-                        error
-                    );
+                MobileAdsEventExecutor.ExecuteInUpdate(
+                    () =>
+                    {
+                        interstitialLoading = false;
 
-                    return;
-                }
+                        if (
+                            error != null ||
+                            ad == null
+                        )
+                        {
+                            Debug.LogWarning(
+                                "Interstitial ad load failed: " +
+                                error
+                            );
 
-                interstitialAd = ad;
+                            ScheduleInterstitialRetry();
 
-                RegisterInterstitialEvents(ad);
+                            return;
+                        }
 
-                Debug.Log(
-                    "Interstitial ad loaded."
+                        CancelInterstitialRetry();
+
+                        interstitialAd = ad;
+
+                        RegisterInterstitialEvents(
+                            ad
+                        );
+
+                        Debug.Log(
+                            "Interstitial ad READY."
+                        );
+                    }
                 );
             }
         );
     }
+
+    private void ScheduleInterstitialRetry()
+    {
+        if (
+            interstitialRetryRoutine != null
+        )
+        {
+            return;
+        }
+
+        interstitialRetryRoutine =
+            StartCoroutine(
+                InterstitialRetryRoutine()
+            );
+    }
+
+    private IEnumerator InterstitialRetryRoutine()
+    {
+        Debug.Log(
+            $"Interstitial retry in " +
+            $"{interstitialRetryDelaySeconds:0}s."
+        );
+
+        yield return new WaitForSecondsRealtime(
+            interstitialRetryDelaySeconds
+        );
+
+        interstitialRetryRoutine = null;
+
+        LoadInterstitialAd();
+    }
+
+    private void CancelInterstitialRetry()
+    {
+        if (
+            interstitialRetryRoutine == null
+        )
+        {
+            return;
+        }
+
+        StopCoroutine(
+            interstitialRetryRoutine
+        );
+
+        interstitialRetryRoutine = null;
+    }
+
+    // ---------------------------------------------------------
+    // SHOW REWARDED
+    // ---------------------------------------------------------
 
     public void ShowRewarded(
         Action onRewardEarned
@@ -283,7 +519,7 @@ public class AdMobRewardedManager : MonoBehaviour
         )
         {
             Debug.LogWarning(
-                "Rewarded ad is not ready."
+                "Rewarded ad is not ready yet."
             );
 
             LoadRewardedAd();
@@ -295,7 +531,12 @@ public class AdMobRewardedManager : MonoBehaviour
 
         NotifyFullScreenAdStarted();
 
-        rewardedAd.Show(
+        RewardedAd adToShow =
+            rewardedAd;
+
+        rewardedAd = null;
+
+        adToShow.Show(
             (Reward reward) =>
             {
                 MobileAdsEventExecutor.ExecuteInUpdate(
@@ -311,6 +552,10 @@ public class AdMobRewardedManager : MonoBehaviour
             }
         );
     }
+
+    // ---------------------------------------------------------
+    // SHOW INTERSTITIAL
+    // ---------------------------------------------------------
 
     public bool ShowInterstitial()
     {
@@ -351,19 +596,30 @@ public class AdMobRewardedManager : MonoBehaviour
 
         NotifyFullScreenAdStarted();
 
-        interstitialAd.Show();
+        InterstitialAd adToShow =
+            interstitialAd;
+
+        interstitialAd = null;
+
+        adToShow.Show();
 
         return true;
     }
 
     private void NotifyFullScreenAdStarted()
     {
-        if (AutoInterstitialManager.Instance != null)
+        if (
+            AutoInterstitialManager.Instance != null
+        )
         {
             AutoInterstitialManager.Instance
                 .NotifyFullScreenAdShown();
         }
     }
+
+    // ---------------------------------------------------------
+    // REWARDED EVENTS
+    // ---------------------------------------------------------
 
     private void RegisterRewardedEvents(
         RewardedAd ad
@@ -383,12 +639,11 @@ public class AdMobRewardedManager : MonoBehaviour
                     {
                         fullScreenAdShowing = false;
 
-                        if (rewardedAd == ad)
-                        {
-                            rewardedAd = null;
-                        }
-
                         ad.Destroy();
+
+                        Debug.Log(
+                            "Rewarded ad closed."
+                        );
 
                         LoadRewardedAd();
                     }
@@ -404,22 +659,21 @@ public class AdMobRewardedManager : MonoBehaviour
                         fullScreenAdShowing = false;
 
                         Debug.LogWarning(
-                            "Rewarded ad failed: " +
+                            "Rewarded ad failed to show: " +
                             error
                         );
 
-                        if (rewardedAd == ad)
-                        {
-                            rewardedAd = null;
-                        }
-
                         ad.Destroy();
 
-                        LoadRewardedAd();
+                        ScheduleRewardedRetry();
                     }
                 );
             };
     }
+
+    // ---------------------------------------------------------
+    // INTERSTITIAL EVENTS
+    // ---------------------------------------------------------
 
     private void RegisterInterstitialEvents(
         InterstitialAd ad
@@ -439,12 +693,11 @@ public class AdMobRewardedManager : MonoBehaviour
                     {
                         fullScreenAdShowing = false;
 
-                        if (interstitialAd == ad)
-                        {
-                            interstitialAd = null;
-                        }
-
                         ad.Destroy();
+
+                        Debug.Log(
+                            "Interstitial ad closed."
+                        );
 
                         LoadInterstitialAd();
                     }
@@ -460,22 +713,21 @@ public class AdMobRewardedManager : MonoBehaviour
                         fullScreenAdShowing = false;
 
                         Debug.LogWarning(
-                            "Interstitial ad failed: " +
+                            "Interstitial failed to show: " +
                             error
                         );
 
-                        if (interstitialAd == ad)
-                        {
-                            interstitialAd = null;
-                        }
-
                         ad.Destroy();
 
-                        LoadInterstitialAd();
+                        ScheduleInterstitialRetry();
                     }
                 );
             };
     }
+
+    // ---------------------------------------------------------
+    // CLEANUP
+    // ---------------------------------------------------------
 
     private void DestroyRewardedAd()
     {
@@ -483,6 +735,7 @@ public class AdMobRewardedManager : MonoBehaviour
             return;
 
         rewardedAd.Destroy();
+
         rewardedAd = null;
     }
 
@@ -492,11 +745,15 @@ public class AdMobRewardedManager : MonoBehaviour
             return;
 
         interstitialAd.Destroy();
+
         interstitialAd = null;
     }
 
     private void OnDestroy()
     {
+        CancelRewardedRetry();
+        CancelInterstitialRetry();
+
         DestroyRewardedAd();
         DestroyInterstitialAd();
 

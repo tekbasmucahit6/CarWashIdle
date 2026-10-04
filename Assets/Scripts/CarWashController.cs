@@ -4,7 +4,8 @@ using UnityEngine;
 
 public class CarWashController : MonoBehaviour
 {
-    public static CarWashController Instance { get; private set; }
+    [Header("Station")]
+    [SerializeField] private WashStationController stationController;
 
     [Header("Brushes")]
     [SerializeField] private BrushSpinner brushLeft;
@@ -25,19 +26,8 @@ public class CarWashController : MonoBehaviour
 
     public bool IsWashing => washing;
 
-    private void Awake()
-    {
-        if (
-            Instance != null &&
-            Instance != this
-        )
-        {
-            Destroy(gameObject);
-            return;
-        }
-
-        Instance = this;
-    }
+    public WashStationController StationController =>
+        stationController;
 
     private void Start()
     {
@@ -81,13 +71,10 @@ public class CarWashController : MonoBehaviour
         float washDuration =
             fallbackWashDuration;
 
-        if (
-            WashUpgradeManager.Instance != null
-        )
+        if (stationController != null)
         {
             washDuration =
-                WashUpgradeManager
-                    .Instance
+                stationController
                     .CurrentWashDuration;
         }
 

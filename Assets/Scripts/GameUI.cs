@@ -1,24 +1,17 @@
 using System.Collections;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class GameUI : MonoBehaviour
 {
-    [Header("Texts")]
-    [SerializeField] private TMP_Text coinsText;
-    [SerializeField] private TMP_Text levelText;
-    [SerializeField] private TMP_Text upgradeButtonText;
+    public static GameUI Instance { get; private set; }
 
-    [Header("Buttons")]
-    [SerializeField] private Button upgradeButton;
+    [Header("Coins")]
+    [SerializeField] private TMP_Text coinsText;
 
     [Header("Floating Coin")]
     [SerializeField] private GameObject floatingCoinPrefab;
     [SerializeField] private RectTransform floatingCoinSpawnPoint;
-
-    [Header("Level Up")]
-    [SerializeField] private TMP_Text levelUpText;
 
     [Header("Animation")]
     [SerializeField] private float coinPopScale = 1.2f;
@@ -27,64 +20,41 @@ public class GameUI : MonoBehaviour
     private Vector3 originalCoinScale;
 
     private Coroutine coinAnimationRoutine;
-    private Coroutine levelUpRoutine;
+
+    private void Awake()
+    {
+        if (
+            Instance != null &&
+            Instance != this
+        )
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+    }
 
     private void Start()
     {
-        // Upgrade butonunun text referansı boşsa
-        // otomatik olarak butonun içinden bul.
-        if (
-            upgradeButtonText == null &&
-            upgradeButton != null
-        )
-        {
-            upgradeButtonText =
-                upgradeButton.GetComponentInChildren<TMP_Text>();
-        }
-
         if (coinsText != null)
         {
             originalCoinScale =
                 coinsText.transform.localScale;
         }
 
-        if (upgradeButton != null)
-        {
-            upgradeButton.onClick.RemoveAllListeners();
-
-            upgradeButton.onClick.AddListener(
-                OnUpgradeButtonPressed
-            );
-        }
-
-        if (levelUpText != null)
-        {
-            levelUpText.gameObject.SetActive(false);
-        }
-
-        SubscribeToEvents();
-
-        RefreshUI();
-    }
-
-    private void SubscribeToEvents()
-    {
         if (GameEconomy.Instance != null)
         {
             GameEconomy.Instance.OnCoinsChanged +=
                 OnCoinsChanged;
         }
 
-        if (WashUpgradeManager.Instance != null)
-        {
-            WashUpgradeManager.Instance.OnUpgradeChanged +=
-                OnUpgradeChanged;
-        }
+        RefreshCoins();
     }
 
     private void OnCoinsChanged(int coins)
     {
-        RefreshUI();
+        RefreshCoins();
 
         if (coinAnimationRoutine != null)
         {
@@ -97,34 +67,6 @@ public class GameUI : MonoBehaviour
             StartCoroutine(
                 CoinPopAnimation()
             );
-    }
-
-    private void OnUpgradeChanged()
-    {
-        RefreshUI();
-
-        if (levelUpRoutine != null)
-        {
-            StopCoroutine(
-                levelUpRoutine
-            );
-        }
-
-        levelUpRoutine =
-            StartCoroutine(
-                LevelUpAnimation()
-            );
-    }
-
-    private void OnUpgradeButtonPressed()
-    {
-        if (WashUpgradeManager.Instance == null)
-            return;
-
-        WashUpgradeManager.Instance.TryUpgrade();
-
-        // Upgrade sonrası fiyatı anında yenile.
-        RefreshUI();
     }
 
     public void ShowFloatingCoins(int amount)
@@ -156,12 +98,6 @@ public class GameUI : MonoBehaviour
         }
     }
 
-    private void RefreshUI()
-    {
-        RefreshCoins();
-        RefreshUpgrade();
-    }
-
     private void RefreshCoins()
     {
         if (
@@ -176,60 +112,14 @@ public class GameUI : MonoBehaviour
             $"COINS {FormatNumber(GameEconomy.Instance.Coins)}";
     }
 
-    private void RefreshUpgrade()
-    {
-        if (WashUpgradeManager.Instance == null)
-            return;
-
-        int level =
-            WashUpgradeManager.Instance.Level;
-
-        int nextPrice =
-            WashUpgradeManager.Instance.CurrentUpgradeCost;
-
-        bool isMax =
-            WashUpgradeManager.Instance.IsMaxLevel;
-
-        if (levelText != null)
-        {
-            levelText.text =
-                $"WASH LV. {level}";
-        }
-
-        if (upgradeButtonText != null)
-        {
-            if (isMax)
-            {
-                upgradeButtonText.text =
-                    "MAX LEVEL";
-            }
-            else
-            {
-                upgradeButtonText.text =
-                    $"WASH SPEED\nUPGRADE • {FormatNumber(nextPrice)}";
-            }
-        }
-
-        if (
-            upgradeButton != null &&
-            GameEconomy.Instance != null
-        )
-        {
-            upgradeButton.interactable =
-                !isMax &&
-                GameEconomy.Instance.CanAfford(
-                    nextPrice
-                );
-        }
-    }
-
     private IEnumerator CoinPopAnimation()
     {
         if (coinsText == null)
             yield break;
 
         Vector3 targetScale =
-            originalCoinScale * coinPopScale;
+            originalCoinScale *
+            coinPopScale;
 
         float timer = 0f;
 
@@ -241,7 +131,8 @@ public class GameUI : MonoBehaviour
                 Vector3.Lerp(
                     originalCoinScale,
                     targetScale,
-                    timer / animationDuration
+                    timer /
+                    animationDuration
                 );
 
             yield return null;
@@ -257,7 +148,8 @@ public class GameUI : MonoBehaviour
                 Vector3.Lerp(
                     targetScale,
                     originalCoinScale,
-                    timer / animationDuration
+                    timer /
+                    animationDuration
                 );
 
             yield return null;
@@ -267,83 +159,16 @@ public class GameUI : MonoBehaviour
             originalCoinScale;
     }
 
-    private IEnumerator LevelUpAnimation()
-    {
-        if (
-            levelUpText == null ||
-            WashUpgradeManager.Instance == null
-        )
-        {
-            yield break;
-        }
-
-        levelUpText.gameObject.SetActive(true);
-
-        levelUpText.text =
-            $"LEVEL {WashUpgradeManager.Instance.Level}!";
-
-        levelUpText.transform.localScale =
-            Vector3.zero;
-
-        float timer = 0f;
-
-        while (timer < 0.2f)
-        {
-            timer += Time.deltaTime;
-
-            levelUpText.transform.localScale =
-                Vector3.Lerp(
-                    Vector3.zero,
-                    Vector3.one * 1.2f,
-                    timer / 0.2f
-                );
-
-            yield return null;
-        }
-
-        yield return new WaitForSeconds(0.6f);
-
-        timer = 0f;
-
-        Vector3 startScale =
-            levelUpText.transform.localScale;
-
-        while (timer < 0.2f)
-        {
-            timer += Time.deltaTime;
-
-            levelUpText.transform.localScale =
-                Vector3.Lerp(
-                    startScale,
-                    Vector3.zero,
-                    timer / 0.2f
-                );
-
-            yield return null;
-        }
-
-        levelUpText.gameObject.SetActive(false);
-    }
-
     private string FormatNumber(int number)
     {
         if (number >= 1_000_000_000)
-        {
-            return
-                $"{number / 1_000_000_000f:0.#}B";
-        }
+            return $"{number / 1_000_000_000f:0.#}B";
 
         if (number >= 1_000_000)
-        {
-            return
-                $"{number / 1_000_000f:0.#}M";
-        }
+            return $"{number / 1_000_000f:0.#}M";
 
         if (number >= 1_000)
-        {
-            return
-                $"{number / 1_000f:0.#}K";
-        }
+            return $"{number / 1_000f:0.#}K";
 
         return number.ToString();
     }
@@ -356,10 +181,9 @@ public class GameUI : MonoBehaviour
                 OnCoinsChanged;
         }
 
-        if (WashUpgradeManager.Instance != null)
+        if (Instance == this)
         {
-            WashUpgradeManager.Instance.OnUpgradeChanged -=
-                OnUpgradeChanged;
+            Instance = null;
         }
     }
 }

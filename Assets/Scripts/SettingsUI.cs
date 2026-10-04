@@ -59,11 +59,6 @@ public class SettingsUI : MonoBehaviour
         RefreshPrivacyChoicesButton();
     }
 
-    private void Update()
-    {
-        RefreshPrivacyChoicesButton();
-    }
-
     public void OpenSettings()
     {
         if (settingsPanel != null)
@@ -84,7 +79,9 @@ public class SettingsUI : MonoBehaviour
 
     public void OpenPrivacyPolicy()
     {
-        Application.OpenURL(PrivacyPolicyUrl);
+        Application.OpenURL(
+            PrivacyPolicyUrl
+        );
     }
 
     public void OpenPrivacyChoices()
@@ -92,18 +89,28 @@ public class SettingsUI : MonoBehaviour
         if (ConsentManager.Instance == null)
             return;
 
-        ConsentManager.Instance.ShowPrivacyOptions();
+        ConsentManager.Instance
+            .ShowPrivacyOptions();
     }
 
     public void OpenSupport()
     {
-        Application.OpenURL(SupportUrl);
+        Application.OpenURL(
+            SupportUrl
+        );
     }
 
     private void RefreshPrivacyChoicesButton()
     {
         if (privacyChoicesButton == null)
             return;
+
+#if UNITY_EDITOR
+        // Unity Editor'da UMP gerçek cihaz durumunu
+        // sağlayamaz. Placeholder log spamını da önler.
+        privacyChoicesButton.interactable = false;
+        return;
+#else
 
         if (ConsentManager.Instance == null)
         {
@@ -112,6 +119,9 @@ public class SettingsUI : MonoBehaviour
         }
 
         privacyChoicesButton.interactable =
-            ConsentManager.Instance.IsPrivacyOptionsRequired;
+            ConsentManager.Instance
+                .IsPrivacyOptionsRequired;
+
+#endif
     }
 }

@@ -5,16 +5,17 @@ public class AutoInterstitialManager : MonoBehaviour
     public static AutoInterstitialManager Instance { get; private set; }
 
     [Header("Interstitial Timing")]
-    [SerializeField] private float firstAdDelaySeconds = 180f;
     [SerializeField] private float adIntervalSeconds = 120f;
 
     private float timer;
     private bool adDue;
-    private bool firstInterstitialShown;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
+        if (
+            Instance != null &&
+            Instance != this
+        )
         {
             Destroy(gameObject);
             return;
@@ -30,7 +31,8 @@ public class AutoInterstitialManager : MonoBehaviour
 
         if (
             AdMobRewardedManager.Instance != null &&
-            AdMobRewardedManager.Instance.IsFullScreenAdShowing
+            AdMobRewardedManager.Instance
+                .IsFullScreenAdShowing
         )
         {
             return;
@@ -38,19 +40,15 @@ public class AutoInterstitialManager : MonoBehaviour
 
         timer += Time.unscaledDeltaTime;
 
-        float requiredTime =
-            firstInterstitialShown
-                ? adIntervalSeconds
-                : firstAdDelaySeconds;
+        if (timer < adIntervalSeconds)
+            return;
 
-        if (timer >= requiredTime)
-        {
-            adDue = true;
+        adDue = true;
 
-            Debug.Log(
-                "Interstitial ready. Waiting for wash completion."
-            );
-        }
+        Debug.Log(
+            "Interstitial due. " +
+            "Waiting for next wash completion."
+        );
     }
 
     public void NotifyWashCompleted()
@@ -58,28 +56,37 @@ public class AutoInterstitialManager : MonoBehaviour
         if (!adDue)
             return;
 
-        if (AdMobRewardedManager.Instance == null)
+        if (
+            AdMobRewardedManager.Instance == null
+        )
+        {
             return;
+        }
 
         if (
-            AdMobRewardedManager.Instance.IsFullScreenAdShowing
+            AdMobRewardedManager.Instance
+                .IsFullScreenAdShowing
         )
         {
             return;
         }
 
         bool shown =
-            AdMobRewardedManager.Instance.ShowInterstitial();
+            AdMobRewardedManager.Instance
+                .ShowInterstitial();
 
         if (!shown)
+        {
+            Debug.Log(
+                "Interstitial due but not ready. " +
+                "Will try again after next wash."
+            );
+
             return;
-
-        firstInterstitialShown = true;
-
-        ResetCooldown();
+        }
 
         Debug.Log(
-            "Interstitial shown. Cooldown restarted."
+            "Interstitial shown."
         );
     }
 
@@ -88,7 +95,8 @@ public class AutoInterstitialManager : MonoBehaviour
         ResetCooldown();
 
         Debug.Log(
-            "Fullscreen ad shown. Interstitial cooldown restarted."
+            "Fullscreen ad shown. " +
+            "Interstitial cooldown restarted."
         );
     }
 

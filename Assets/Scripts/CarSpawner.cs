@@ -6,6 +6,12 @@ public class CarSpawner : MonoBehaviour
     [Header("Cars")]
     [SerializeField] private GameObject[] carPrefabs;
 
+    [Header("Station")]
+    [SerializeField] private WashStationController stationController;
+
+    [Header("Car Wash")]
+    [SerializeField] private CarWashController carWashController;
+
     [Header("Path Points")]
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private Transform entryPoint;
@@ -19,7 +25,30 @@ public class CarSpawner : MonoBehaviour
 
     private void Start()
     {
-        SpawnCar();
+        if (stationController == null)
+        {
+            Debug.LogError(
+                "CarSpawner: StationController missing."
+            );
+
+            return;
+        }
+
+        stationController.OnUnlocked +=
+            OnStationUnlocked;
+
+        if (stationController.IsUnlocked)
+        {
+            SpawnCar();
+        }
+    }
+
+    private void OnStationUnlocked()
+    {
+        if (!carActive)
+        {
+            SpawnCar();
+        }
     }
 
     private void SpawnCar()
@@ -27,10 +56,30 @@ public class CarSpawner : MonoBehaviour
         if (carActive)
             return;
 
-        if (carPrefabs == null || carPrefabs.Length == 0)
+        if (
+            stationController == null ||
+            !stationController.IsUnlocked
+        )
+        {
+            return;
+        }
+
+        if (
+            carPrefabs == null ||
+            carPrefabs.Length == 0
+        )
         {
             Debug.LogError(
                 "CarSpawner: No car prefabs assigned."
+            );
+
+            return;
+        }
+
+        if (carWashController == null)
+        {
+            Debug.LogError(
+                "CarSpawner: CarWashController missing."
             );
 
             return;
@@ -44,44 +93,37 @@ public class CarSpawner : MonoBehaviour
         )
         {
             Debug.LogError(
-                "CarSpawner: One or more path points are missing."
+                "CarSpawner: Path point missing."
             );
 
             return;
         }
 
         int randomIndex =
-            Random.Range(0, carPrefabs.Length);
+            Random.Range(
+                0,
+                carPrefabs.Length
+            );
 
         GameObject selectedPrefab =
             carPrefabs[randomIndex];
 
         if (selectedPrefab == null)
-        {
-            Debug.LogError(
-                "CarSpawner: A car prefab slot is empty."
-            );
-
             return;
-        }
 
-        GameObject newCar = Instantiate(
-            selectedPrefab,
-            spawnPoint.position,
-            spawnPoint.rotation
-        );
+        GameObject newCar =
+            Instantiate(
+                selectedPrefab,
+                spawnPoint.position,
+                spawnPoint.rotation
+            );
 
         CarMover carMover =
             newCar.GetComponent<CarMover>();
 
         if (carMover == null)
         {
-            Debug.LogError(
-                "CarSpawner: Spawned car does not contain CarMover."
-            );
-
             Destroy(newCar);
-
             return;
         }
 
@@ -91,6 +133,8 @@ public class CarSpawner : MonoBehaviour
             entryPoint,
             washPoint,
             exitPoint,
+            carWashController,
+            stationController,
             OnCarFinished
         );
     }
@@ -110,6 +154,21 @@ public class CarSpawner : MonoBehaviour
 
         carActive = false;
 
-        SpawnCar();
+        if (
+            stationController != null &&
+            stationController.IsUnlocked
+        )
+        {
+            SpawnCar();
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (stationController != null)
+        {
+            stationController.OnUnlocked -=
+                OnStationUnlocked;
+        }
     }
 }

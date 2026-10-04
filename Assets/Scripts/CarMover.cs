@@ -14,7 +14,11 @@ public class CarMover : MonoBehaviour
     private Transform washPoint;
     private Transform exitPoint;
 
+    private CarWashController carWashController;
+    private WashStationController stationController;
+
     private int currentStage;
+
     private Action onFinished;
 
     private bool initialized;
@@ -26,13 +30,28 @@ public class CarMover : MonoBehaviour
         Transform newEntryPoint,
         Transform newWashPoint,
         Transform newExitPoint,
+        CarWashController newCarWashController,
+        WashStationController newStationController,
         Action finishedCallback
     )
     {
-        entryPoint = newEntryPoint;
-        washPoint = newWashPoint;
-        exitPoint = newExitPoint;
-        onFinished = finishedCallback;
+        entryPoint =
+            newEntryPoint;
+
+        washPoint =
+            newWashPoint;
+
+        exitPoint =
+            newExitPoint;
+
+        carWashController =
+            newCarWashController;
+
+        stationController =
+            newStationController;
+
+        onFinished =
+            finishedCallback;
 
         currentStage = 0;
 
@@ -155,18 +174,17 @@ public class CarMover : MonoBehaviour
 
         waitingForWash = true;
 
-        if (CarWashController.Instance == null)
+        if (carWashController == null)
         {
             Debug.LogWarning(
-                "CarWashController missing. Wash skipped."
+                "CarMover: CarWashController missing."
             );
 
             OnWashCompleted();
-
             return;
         }
 
-        CarWashController.Instance.StartWash(
+        carWashController.StartWash(
             OnWashCompleted
         );
     }
@@ -196,11 +214,10 @@ public class CarMover : MonoBehaviour
         int reward =
             fallbackRewardCoins;
 
-        if (WashUpgradeManager.Instance != null)
+        if (stationController != null)
         {
             reward =
-                WashUpgradeManager.Instance
-                    .CurrentReward;
+                stationController.CurrentReward;
         }
 
         int multiplier = 1;
@@ -213,7 +230,8 @@ public class CarMover : MonoBehaviour
         }
 
         int finalReward =
-            reward * multiplier;
+            reward *
+            multiplier;
 
         if (GameEconomy.Instance != null)
         {
@@ -222,19 +240,16 @@ public class CarMover : MonoBehaviour
             );
         }
 
-        GameUI gameUI =
-            FindFirstObjectByType<GameUI>();
-
-        if (gameUI != null)
+        if (GameUI.Instance != null)
         {
-            gameUI.ShowFloatingCoins(
+            GameUI.Instance.ShowFloatingCoins(
                 finalReward
             );
         }
 
         Debug.Log(
-            $"Wash completed. +{finalReward} coins. " +
-            $"Multiplier: x{multiplier}"
+            $"{stationController?.DisplayName ?? "Wash"} " +
+            $"completed. +{finalReward} coins."
         );
     }
 
